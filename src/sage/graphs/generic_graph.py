@@ -5924,7 +5924,7 @@ class GenericGraph(GenericGraph_pyx):
 
             sage: G = Graph([(0, 3, 1), (0, 4, 1), (1, 2, 1), (2, 3, 1), (2, 4, 1)])
             sage: G.edge_cut(0, 1, value_only=False, use_edge_labels=True)
-            [1, [(1, 2, 1)]]
+            [1, [(2, 1, 1)]]
             sage: G = DiGraph([(0, 3, 1), (0, 4, 1), (2, 1, 1), (3, 2, 1), (4, 2, 1)])
             sage: G.edge_cut(0, 1, value_only=False, use_edge_labels=True)
             [1, [(2, 1, 1)]]
@@ -10642,7 +10642,9 @@ class GenericGraph(GenericGraph_pyx):
             sage: G.edge_boundary([0], [0])
             []
             sage: G.edge_boundary([2], [0])
-            [(0, 2, None)]
+            [(2, 0, None)]
+            sage: G.edge_boundary([2])
+            [(2, 0, None), (2, 1, None), (2, 3, None)]
         """
         vertices1 = set([v for v in vertices1 if v in self])
         if self._directed:
@@ -10656,12 +10658,25 @@ class GenericGraph(GenericGraph_pyx):
         else:
             if vertices2 is not None:
                 vertices2 = set([v for v in vertices2 if v in self])
-                output = [e for e in self.edge_iterator(vertices1,labels=labels)
-                            if (e[0] in vertices1 and e[1] in vertices2) or
-                            (e[1] in vertices1 and e[0] in vertices2)]
+                output = []
+                for e in self.edge_iterator(vertices1,labels=labels):
+                    if e[0] in vertices1 and e[1] in vertices2:
+                        output.append(e)
+                    elif e[1] in vertices1 and e[0] in vertices2:
+                        if labels:
+                            output.append((e[1], e[0], e[2]))
+                        else:
+                            output.append((e[1], e[0]))
             else:
-                output = [e for e in self.edge_iterator(vertices1,labels=labels)
-                            if e[1] not in vertices1 or e[0] not in vertices1]
+                output = []
+                for e in self.edge_iterator(vertices1,labels=labels):
+                    if e[1] not in vertices1:
+                        output.append(e)
+                    elif e[0] not in vertices1:
+                        if labels:
+                            output.append((e[1], e[0], e[2]))
+                        else:
+                            output.append((e[1], e[0]))
         if sort:
             output.sort()
         return output
