@@ -122,28 +122,37 @@ class SPQRNode(SageObject):
             else:
                 return set(e for _,_,e in cycle)
 
+    def delete_edge(self, e):
+        self._elements.remove(e)
+        if self._graph is not None:
+            G = self.graph()
+            u, v = G.get_edge(e)
+            if u is not None:
+                G.delete_edge(u, v, e)
+
+    def _add_edge(self, u, v, e):
+        self._elements.add(e)
+        G = self.graph()
+        G.add_edge(u, v, e)
+
+    def _add_edges(self, edges):
+        edges = list(edges)
+        self._elements.update((e for _,_,e in edges))
+        self.graph().add_edges(edges)
+
     def add_edge(self, u, v, e_new):
         G = self.graph()
         owner = self.owner()
         if not G.has_edge(u,v):
-            G.add_edge(u, v, e_new)
-            self._elements.add(e_new)
+            self._add_edge(u, v, e_new)
             return self
         else:
             e_old, = G.edge_label(u, v)
             m = owner.new_marker()
-            G.delete_edge(u, v, e_old)
-            G.add_edge(u, v, m)
-            self._elements.remove(e_old)
-            self._elements.add(m)
+            self.delete_edge(e_old)
+            self._add_edge(u, v, m)
             new_node = owner.add_bond_node(self.id(), m, {e_old, e_new, m})
-            t, s = owner.get_edge(e_old)
-            if t is not None:
-                if t != self.id():
-                    t, s = s, t
-                new_t = new_node.id()
-                owner.delete_edge(t, s, e_old)
-                owner.add_edge(new_t, s, e_old)
+            owner.move_edge(e_old, self.id(), new_node.id())
             return new_node
 
     def add_path(self, u, v, new_elements):
@@ -251,15 +260,11 @@ class SPQRNode(SageObject):
         if uG not in self_end_verts:
             uG, vG = vG, uG
         assert uG in self_end_verts
-        G.delete_edge(uG, vG, m)
-        self._elements.remove(m)
 
         uH, vH = H.get_edge(m)
         if uH not in other_end_verts:
             uH, vH = vH, uH
         assert uH in other_end_verts
-        H.delete_edge(uH, vH, m)
-        other._elements.remove(m)
 
         if flipped:
             vertex_map = {uH: vG, vH: uG}
@@ -268,9 +273,11 @@ class SPQRNode(SageObject):
         for v in H:
             if v != uH and v != vH:
                 vertex_map[v] = G.add_vertex()
-        G.add_edges((vertex_map[u], vertex_map[v], e)
-                    for u, v, e in H.edge_iterator())
-        self._elements.update(H.edge_labels())
+        self._add_edges((vertex_map[u], vertex_map[v], e)
+                        for u, v, e in H.edge_iterator())
+
+        self.delete_edge(m)
+        other.delete_edge(m)
         owner.merge_vertices([self.id(), other.id()])
 
         # update the ends of the path in the glued graph
@@ -393,6 +400,15 @@ class SPQRTree(EdgeLabelledGraph):
         self.set_vertex(t, node)
         self.add_edge(parent, t, marker)
         return node
+
+    def move_edge(self, e, t_old, t_new):
+        t, s = self.get_edge(e)
+        if t is not None:
+            if t != t_old:
+                t, s = s, t
+            assert t == t_old
+            self.delete_edge(t_old, s, e)
+            self.add_edge(t_new, s, e)
 
     def _reduced_subtree(self, elements):
         assert len(self) > 0
