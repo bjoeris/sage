@@ -44,8 +44,8 @@ class SPQRNode(SageObject):
     def Cycle(owner, id, elements):
         node = SPQRNode(owner, id)
         node._kind = SPQRNode.CYCLE
-        if len(elements) < 3:
-            node._kind |= SPQRNode.BOND
+        # if len(elements) < 3:
+        #     node._kind |= SPQRNode.BOND
         if len(elements) < 4:
             node._kind |= SPQRNode.RIGID
         node._elements.update(elements)
@@ -55,8 +55,8 @@ class SPQRNode(SageObject):
     def Bond(owner, id, elements):
         node = SPQRNode(owner, id)
         node._kind = SPQRNode.BOND
-        if len(elements) < 3:
-            node._kind |= SPQRNode.CYCLE
+        # if len(elements) < 3:
+        #     node._kind |= SPQRNode.CYCLE
         if len(elements) < 4:
             node._kind |= SPQRNode.RIGID
         node._elements.update(elements)
@@ -67,12 +67,12 @@ class SPQRNode(SageObject):
         node = SPQRNode(owner, id)
         node._kind = SPQRNode.RIGID
         node._graph = graph
-        if len(graph) < 3:
-            node._kind |= SPQRNode.BOND
-        if graph.num_edges() == graph.num_verts() and \
-                graph.num_verts() < 4 and \
-                not graph.has_multiple_edges():
-            node._kind |= SPQRNode.CYCLE
+        # if len(graph) < 3:
+        #     node._kind |= SPQRNode.BOND
+        # if graph.num_edges() == graph.num_verts() and \
+        #         graph.num_verts() < 4 and \
+        #         not graph.has_multiple_edges():
+        #     node._kind |= SPQRNode.CYCLE
         node._elements.update(graph.edge_labels())
         return node
 
@@ -140,7 +140,17 @@ class SPQRNode(SageObject):
         self._elements.update((e for _,_,e in edges))
         self.graph().add_edges(edges)
 
+    def add_element(self, e_new):
+        assert self.is_cycle() or self.is_bond()
+        self._elements.add(e_new)
+        if len(self.elements()) > 3:
+            self._kind &= ~SPQRNode.RIGID
+        self._graph = None
+        return self
+
     def add_edge(self, u, v, e_new):
+        if self.is_bond():
+            return self.add_element(e_new)
         G = self.graph()
         owner = self.owner()
         if not G.has_edge(u,v):
@@ -148,6 +158,13 @@ class SPQRNode(SageObject):
             return self
         else:
             e_old, = G.edge_label(u, v)
+            s, t = owner.get_edge(e_old)
+            if s is not None:
+                if s != self.id():
+                    s, t = t, s
+                other = owner.get_node(t)
+                if other.is_bond():
+                    return other.add_element(e_new)
             m = owner.new_marker()
             self.delete_edge(e_old)
             self._add_edge(u, v, m)
@@ -176,13 +193,33 @@ class SPQRNode(SageObject):
         returns the set of end vertices of the path (which has len 1 or 2)
         """
         assert path_elements <= self.elements()
+        end_element_set = set(e for e in end_elements if e is not None)
+        if self.is_bond():
+            if len(path_elements) == 0:
+                return (0, 0)
+            elif len(path_elements) == 1:
+                return (0, 1)
+            else:
+                return None
+        elif self.is_cycle():
+            if len(path_elements) == 0:
+                return (0, 0)
+            elif len(path_elements) < len(self.elements()):
+                if path_elements <= end_element_set:
+                    return (0, len(path_elements))
+                else:
+                    ends_in_path = path_elements & end_element_set
+                    return (0, 1 + len(ends_in_path))
+            else:
+                return None
         G = self.graph()
         if len(path_elements) == 0:
-            assert len(end_elements) == 2
+            assert len(end_element_set) == 2
             e1, e2 = end_elements
             common_verts = set(G.get_edge(e1))
             common_verts.intersection_update(G.get_edge(e2))
-            return {next(iter(common_verts))}
+            v = next(iter(common_verts))
+            return (v, v)
         vertices = G.vertices_incident(path_elements)
         edges = [G.get_edge(e, labelled=True) for e in path_elements]
         if len(vertices) != len(edges) + 1:
@@ -190,19 +227,33 @@ class SPQRNode(SageObject):
         P = G.subgraph(vertices, edges)
         if not P.is_connected():
             return None
-        end_verts = set()
+        end_vert_set = set()
         for v in P:
             d = P.degree(v)
             if d <= 1:
-                end_verts.add(v)
+                end_vert_set.add(v)
             elif d > 2:
                 return None
+        end_verts = []
         for e in end_elements:
-            if len(end_verts.intersection(G.get_edge(e))) != 1:
-                return None
-        return end_verts
+            if e is not None:
+                verts_incident = end_vert_set.intersection(G.get_edge(e))
+                if len(verts_incident) == 0:
+                    return None
+                elif len(verts_incident) == 1:
+                    v, = verts_incident
+                    end_vert_set.remove(v)
+                    end_verts.append(v)
+                    continue
+            end_verts.append(None)
+        for i, v in enumerate(end_verts):
+            if v is None:
+                v = end_vert_set.pop()
+                end_verts[i] = v
+        return tuple(end_verts)
 
     def split(self, elements):
+        elements = set(elements)
         assert elements <= self.elements()
         assert len(elements) > 0
         assert self.is_bond() or self.is_cycle()
@@ -210,45 +261,78 @@ class SPQRNode(SageObject):
             e, = elements
             return e
         owner = self.owner()
+        self._elements.difference_update(elements)
         m = owner.new_marker()
         self._elements.add(m)
         elements.add(m)
-        self._elements.difference_update(elements)
         self._graph = None
         if self.is_bond():
-            owner.add_bond_node(self.id(), m, elements)
+            t_new = owner.add_bond_node(self.id(), m, elements).id()
         else:
-            owner.add_cycle_node(self.id(), m, elements)
+            t_new = owner.add_cycle_node(self.id(), m, elements).id()
+        for e in elements:
+            if e == m:
+                continue
+            s, t = owner.get_edge(e)
+            if s is not None:
+                if s == self.id():
+                    s, t = t, s
+                owner.delete_edge(t, s, e)
+                owner.add_edge(t_new, s, e)
         return m
 
     def become_rigid(self, graph):
         self._graph = graph
-        self._kind |= SPQRNode.RIGID
+        self._kind = SPQRNode.RIGID
+
+    def become_bond(self):
+        self._kind = SPQRNode.BOND
+        if len(self.elements()) < 4:
+            self._kind |= SPQRNode.RIGID
+
+    def become_cycle(self):
+        self._kind = SPQRNode.CYCLE
+        if len(self.elements()) < 4:
+            self._kind |= SPQRNode.RIGID
 
     def rigidify_path(self, path_elements, end_elements):
         assert path_elements <= self.elements()
-        if self.is_bond() or self.is_rigid():
-            return
-        else:
-            assert len(end_elements) <= 2
-            anti_path_elements = self.elements() - (path_elements |
-                                                   end_elements)
-            path_elements = path_elements - end_elements
-            e1, e2, e3, e4 = [None] * 4
-            if len(path_elements) > 0:
-                e1 = self.split(path_elements)
+        end_element_set = set(e for e in end_elements if e is not None)
+        if self.is_bond():
+            if len(end_element_set) == 2 and len(self.elements()) > 3:
+                self.split(self.elements() - end_element_set)
+        elif self.is_cycle():
+            def cycle_graph(edges):
+                n = len(edges)
+                G = EdgeLabelledGraph(multiedges=True)
+                G.add_vertices(range(n))
+                G.add_edges((i, (i+1)%n, e) for i, e in enumerate(edges))
+                return G
+
+            if len(path_elements) == len(self.elements()) - 1 and \
+                    len(end_element_set) == 0:
+                e0, = self.elements() - path_elements
+                graph_edges = [e0] + list(path_elements)
+                self._graph = cycle_graph(graph_edges)
+                return
+
+            anti_path_elements = self.elements() - \
+                                 (path_elements | end_element_set)
+            only_path_elements = path_elements - end_element_set
+            e4, e2 = end_elements
+            e1, e3 = None, None
+            if len(only_path_elements) > 0:
+                e1 = self.split(only_path_elements)
             if len(anti_path_elements) > 0:
                 e3 = self.split(anti_path_elements)
-            if len(end_elements) == 2:
-                e4, e2 = tuple(end_elements)
-            elif len(end_elements) == 1:
-                e4, = tuple(end_elements)
             graph_edges = [e for e in [e1, e2, e3, e4] if e is not None]
-            n = len(graph_edges)
-            G = EdgeLabelledGraph(multiedges=True)
-            G.add_vertices(range(n))
-            G.add_edges((i, (i+1)%n, e) for i, e in enumerate(graph_edges))
-            self.become_rigid(G)
+            if e4 in path_elements:
+                graph_edges = graph_edges[-1:] + graph_edges[0:-1]
+            self.become_rigid(cycle_graph(graph_edges))
+            if len(graph_edges) <= 2:
+                self.become_bond()
+            elif len(graph_edges) == 3:
+                self.become_cycle()
 
     def glue(self, other, self_end_verts, other_end_verts, flipped=False):
         G = self.graph()
@@ -257,41 +341,32 @@ class SPQRNode(SageObject):
         m = owner.edge_label(self.id(), other.id())
 
         uG, vG = G.get_edge(m)
-        if uG not in self_end_verts:
+        if uG != self_end_verts[1]:
             uG, vG = vG, uG
-        assert uG in self_end_verts
+            assert uG == self_end_verts[1]
 
         uH, vH = H.get_edge(m)
-        if uH not in other_end_verts:
+        if uH != other_end_verts[0]:
             uH, vH = vH, uH
-        assert uH in other_end_verts
+            assert uH == other_end_verts[0]
 
         if flipped:
             vertex_map = {uH: vG, vH: uG}
         else:
             vertex_map = {uH: uG, vH: vG}
+
+        self.delete_edge(m)
+        other.delete_edge(m)
+
         for v in H:
             if v != uH and v != vH:
                 vertex_map[v] = G.add_vertex()
         self._add_edges((vertex_map[u], vertex_map[v], e)
                         for u, v, e in H.edge_iterator())
-
-        self.delete_edge(m)
-        other.delete_edge(m)
+        self.become_rigid(G)
         owner.merge_vertices([self.id(), other.id()])
 
-        # update the ends of the path in the glued graph
-        if len(self_end_verts) == 1:
-            # path had length 0 in self, so the new ends are just the ends
-            # in other
-            self_end_verts.update(
-                (vertex_map[u] for u in other_end_verts))
-        elif len(other_end_verts) > 1:
-            # path had nonzero length in both self and other, so it had one
-            # private end in each, and one end in common to both self and
-            # other. Keep just the private ends
-            self_end_verts.symmetric_difference_update(
-                (vertex_map[u] for u in other_end_verts))
+        return self_end_verts[0], vertex_map[other_end_verts[1]]
 
     def __len__(self):
         return len(self._elements)
@@ -314,10 +389,11 @@ class SPQRNode(SageObject):
 class SPQRTree(EdgeLabelledGraph):
     def __init__(self, reserved_labels=1000):
         self._next_marker = reserved_labels
+        self._roots = set()
         super(SPQRTree, self).__init__()
 
-    def root(self):
-        return next(iter(self))
+    def roots(self):
+        return self._roots
 
     def new_marker(self):
         m = self._next_marker
@@ -342,49 +418,104 @@ class SPQRTree(EdgeLabelledGraph):
         recurse(None, self.root())
 
     def add_circuit(self, elements):
-        if len(elements) < 2:
-            # adding a cycle of length less than 2 violates 2-connectivity
-            # invariant
+        if len(elements) == 0:
             return False
-        if len(self) == 0:
-            t = self.add_vertex()
-            node = SPQRNode.Cycle(self, t, elements)
-            self.set_vertex(t, node)
-            return True
-        subtree, elements = self._reduced_subtree(elements)
-        path_elements, new_elements = self._divide_elements(elements, subtree)
+        elements = set(elements)
+        old_elements = set()
+        subtrees = []
+        for root in self.roots():
+            subtree, elements = self._reduced_subtree(root, elements)
+            if len(subtree) == 0:
+                continue
 
-        subtree = self._subtree_path(subtree)
-        if subtree is None:
-            return False
+            if len(subtree) == 1:
+                t0, = subtree
+                node0 = self.get_node(t0)
+                node0_elements = elements & node0.elements()
+                if len(node0_elements) == 1:
+                    e, = node0_elements
+                    for t in self.get_edge(e):
+                        if t is not None and self.get_node(t).is_bond():
+                            subtree = {t}
+                            break
 
-        subtree = self._path_ends(subtree, path_elements)
-        if subtree is None:
-            return False
+            for t in subtree:
+                node = self.get_node(t)
+                node_elements = elements & node.elements()
+                old_elements.update(node_elements)
+                cycle = node.find_cycle(node_elements)
+                if cycle is not None:
+                    return cycle == elements
+
+            subtree = self._subtree_path(subtree)
+            if subtree is None:
+                return False
+
+            subtree = self._path_ends(subtree, elements)
+            if subtree is None:
+                return False
+
+            subtrees.append((subtree, root))
 
         # Now we know `path_elements` can be made into a path, so it is safe
         # to start modifying the nodes
 
-        t0, end_elements0, end_vertices0 = subtree[0]
-        node0 = self.get_node(t0)
-        node0.rigidify_path(path_elements & node0.elements(), end_elements0)
-        for t, end_elements, end_vertices in islice(subtree, 1, None):
-            node = self.get_node(t)
-            node.rigidify_path(path_elements & node.elements(), end_elements)
-            node0.glue(node, end_vertices0, end_vertices)
+        new_elements = elements - old_elements
 
-        # now `path_elements` is a path, so we just need to add `new_elements`
-        assert len(end_vertices0) == 2
+        glued_nodes = []
+        first_subtree = True
 
-        u, v = end_vertices0
-        node0.add_path(u, v, new_elements)
+        for subtree, root in subtrees:
+            t0, end_elements0, end_vertices0 = subtree[0]
+            node0 = self.get_node(t0)
+            node0.rigidify_path(elements & node0.elements(), end_elements0)
+            for t, end_elements, end_vertices in islice(subtree, 1, None):
+                if t == root:
+                    self._roots.remove(t)
+                    self._roots.add(t0)
+                    root = t0
+                m = self.edge_label(t0, t)
+                node = self.get_node(t)
+                node.rigidify_path(elements & node.elements(), end_elements)
+                end_vertices0 = node0.glue(node, end_vertices0, end_vertices,
+                                           m in elements)
+                self.validate()
+
+            glued_nodes.append((node0, end_vertices0))
+
+            # now `path_elements` is a path, so we just need to add `new_elements`
+            if not first_subtree:
+                self._roots.remove(root)
+            first_subtree = False
+
+        if len(glued_nodes) == 0:
+            node = self.add_cycle_node(None, None, new_elements)
+            self._roots.add(node.id())
+        elif len(glued_nodes) == 1 and len(new_elements) == 1:
+            (node, (u,v)), = glued_nodes
+            new_e, = new_elements
+            node.add_edge(u, v, new_e)
+        elif len(glued_nodes) == 2 and len(new_elements) == 0:
+            (node0, (u0, v0)), (node1, (u1, v1)) = glued_nodes
+            m = self.new_marker()
+            node0 = node0.add_edge(u0, v0, m)
+            node1 = node1.add_edge(u1, v1, m)
+            self.add_edge(node0.id(), node1.id(), m)
+        else:
+            cycle = self.add_cycle_node(None, None, new_elements)
+            for node, (u,v) in glued_nodes:
+                m = self.new_marker()
+                cycle.add_element(m)
+                node = node.add_edge(u, v, m)
+                self.add_edge(node.id(), cycle.id(), m)
         return True
 
     def add_cycle_node(self, parent, marker, elements):
         t = self.add_vertex()
         node = SPQRNode.Cycle(self, t, elements)
         self.set_vertex(t, node)
-        self.add_edge(parent, t, marker)
+        if parent is not None:
+            self.add_edge(parent, t, marker)
         return node
 
     def add_bond_node(self, parent, marker, elements):
@@ -410,23 +541,39 @@ class SPQRTree(EdgeLabelledGraph):
             self.delete_edge(t_old, s, e)
             self.add_edge(t_new, s, e)
 
-    def _reduced_subtree(self, elements):
+    def validate(self):
+        for t0 in self:
+            node0 = self.get_node(t0)
+            if node0.is_rigid():
+                if node0.is_cycle() or node0.is_bond():
+                    assert len(node0.elements()) <= 3
+            assert not (node0.is_cycle() and node0.is_bond())
+            assert node0.elements() == set(node0.graph().edge_labels())
+            for t1 in self:
+                node1 = self.get_node(t1)
+                if self.has_edge(t0, t1):
+                    m = self.edge_label(t0, t1)
+                    assert node0.elements() & node1.elements() == {m}
+                    assert not (node0.is_bond() and node1.is_bond())
+                    assert not (node0.is_cycle() and node1.is_cycle())
+                elif t0 != t1:
+                    assert len(node0.elements() & node1.elements()) == 0
+
+    def _reduced_subtree(self, root, elements):
         assert len(self) > 0
-        elements = set(elements)
         subtree = set()
 
         def reduce_cycle(node, m):
             node_elements = node.elements() & elements
             if len(node_elements) == 0:
                 return True
-            elif m in elements:
-                return False
+            elif m in node_elements:
+                return node_elements == {m}
             C = node.find_cycle(node_elements | {m})
             if C is not None:
-                if m not in C:
-                    raise Exception("elements already contains a cycle")
-                elements.symmetric_difference_update(C)
-                return (len(C) == len(node_elements) + 1)
+                if m in C:
+                    elements.symmetric_difference_update(C)
+                    return (len(C) == len(node_elements) + 1)
             return False
 
         def recurse(p, t):
@@ -442,12 +589,12 @@ class SPQRTree(EdgeLabelledGraph):
                 subtree.add(t)
             return in_subtree
 
-        recurse(None, self.root())
+        recurse(None, root)
 
         # the root is pulled into the subtree initially, but may not
         # actually belong. Try to reduce cycles down as long as it has
         # exactly one child
-        t = self.root()
+        t = root
         while True:
             subtree_children = [s for s in self.neighbors(t)
                                 if s in subtree]
@@ -459,6 +606,12 @@ class SPQRTree(EdgeLabelledGraph):
                     t = s
                     continue
             break
+
+        if len(subtree) == 1:
+            t, = subtree
+            node = self.get_node(t)
+            if len(node.elements() & elements) == 0:
+                subtree = set()
 
         # subtree now contains the correct set of reduced subtree nodes.
         return subtree, elements
@@ -509,21 +662,20 @@ class SPQRTree(EdgeLabelledGraph):
 
     def _path_ends(self, subtree, path_elements):
         n = len(subtree)
-        subtree = zip(subtree,
-                      (set() for _ in range(n)),
-                      (set() for _ in range(n)))
-        for i, (t, end_elements, end_vertices) in enumerate(subtree):
+        for i, t in enumerate(subtree):
             node = self.get_node(t)
+            e1, e2 = None, None
             if i > 0:
                 t_prev, _, _ = subtree[i-1]
-                end_elements.add(self.edge_label(t_prev, t))
+                e1 = self.edge_label(t_prev, t)
             if i+1 < n:
-                t_next, _, _ = subtree[i+1]
-                end_elements.add(self.edge_label(t_next, t))
-            verts = node.path_end_verts(path_elements & node.elements(),
-                                        end_elements)
-            if verts is None:
+                t_next = subtree[i+1]
+                e2 = self.edge_label(t_next, t)
+            end_elements = e1, e2
+            end_verts = node.path_end_verts(path_elements & node.elements(),
+                                            end_elements)
+            if end_verts is None:
                 return None
-            end_vertices.update(verts)
+            subtree[i] = t, end_elements, end_verts
         return subtree
 
