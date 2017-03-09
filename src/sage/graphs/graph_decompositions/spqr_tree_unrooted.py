@@ -77,29 +77,65 @@ class SPQRNode(SageObject):
         return node
 
     def is_cycle(self):
+        """
+        Returns whether this is a cycle node.
+        """
         return self._kind & SPQRNode.CYCLE != 0
 
     def is_bond(self):
+        """
+        Returns whether this is a bond node.
+        """
         return self._kind & SPQRNode.BOND != 0
 
     def is_rigid(self):
+        """
+        Returns whether this is a rigid (3-connected) node.
+        """
         return self._kind & SPQRNode.RIGID != 0
 
     def graph(self):
+        """
+        Returns one possible graph represented by this node.
+        """
         if self._graph is None:
             self._make_graph()
         return self._graph
 
     def elements(self):
+        """
+        Returns the set of elements associated with this node.
+
+        This is the set of edges of graphs represented by this node.
+
+        This includes marker elements for attachements to other nodes.
+        """
         return self._elements
 
     def owner(self):
+        """
+        The SPQRTree which this node is a part of.
+        """
         return self._owner
 
     def id(self):
+        """
+        The name of the vertex associated with this node in `self.owner()`.
+        """
         return self._id
 
     def find_cycle(self, elements):
+        """
+        Searches for a cycle in a subset of the elements of this node.
+
+        INPUT:
+            - `elements` -- a subset of self.elements().
+
+        OUTPUT:
+            - A subset of `elements` that induces a cycle in the graphs
+            represented by this node.
+            - If no such subset exists, returns `None`.
+        """
         assert elements <= self.elements()
         if self.is_bond():
             if len(elements) >= 2:
@@ -123,6 +159,13 @@ class SPQRNode(SageObject):
                 return set(e for _,_,e in cycle)
 
     def delete_edge(self, e):
+        """
+        Removes an element from this node.
+
+        INPUT:
+            - `e` -- the element to be removed. This must be in
+            `self.elements()`
+        """
         self._elements.remove(e)
         if self._graph is not None:
             G = self.graph()
@@ -131,16 +174,40 @@ class SPQRNode(SageObject):
                 G.delete_edge(u, v, e)
 
     def _add_edge(self, u, v, e):
+        """
+        Adds an edge to this node.
+
+        INPUT:
+            - `u, v` -- the vertices incident with the edge. These should be
+              vertices of `self.graph()`.
+            - `e` -- the label of the edge
+        """
         self._elements.add(e)
         G = self.graph()
         G.add_edge(u, v, e)
 
     def _add_edges(self, edges):
+        """
+        Add a collection of edges to this node.
+
+        INPUT:
+            - `edges` -- An iterable collection of tuples of the form
+            `(u,v,e)`, where `u` and `v` ar the vertices incident with the
+            edge, and `e` is the label of the edge.
+        """
         edges = list(edges)
         self._elements.update((e for _,_,e in edges))
         self.graph().add_edges(edges)
 
     def add_element(self, e_new):
+        """
+        Add a new element to this node.
+
+        This only works for cycle or bond nodes.
+
+        INPUT:
+            - `e_new` -- the new element to be added
+        """
         assert self.is_cycle() or self.is_bond()
         self._elements.add(e_new)
         if len(self.elements()) > 3:
@@ -149,6 +216,16 @@ class SPQRNode(SageObject):
         return self
 
     def add_edge(self, u, v, e_new):
+        """
+        Add an edge to this node.
+
+        This may involve adding additional nodes to the tree.
+
+        INPUT:
+            - `u, v` -- the vertices incident with the new edge
+            - `e_new` -- the label of the new edge. This should not already
+            be in the element set of any node in the tree.
+        """
         if self.is_bond():
             return self.add_element(e_new)
         G = self.graph()
@@ -173,6 +250,17 @@ class SPQRNode(SageObject):
             return new_node
 
     def add_path(self, u, v, new_elements):
+        """
+        Add a path, with endpoints in this this node.
+
+        This may involve adding additional nodes to the tree.
+
+        INPUT:
+            - `u, v` -- the ends of the path
+            - `new_elements` -- an iterable collection of elements. These
+            elements should not already be in the element set of any nodes
+            in the tree.
+        """
         owner = self.owner()
         if len(new_elements) == 1:
             e, = new_elements
@@ -185,12 +273,24 @@ class SPQRNode(SageObject):
 
     def path_end_verts(self, path_elements, end_elements):
         """
-        Determines whether this node has a representitation such that the
-        intersection of `path_elements` with `self.elements()` is a path,
-        with ends on vertices incident with the edges in `end_elements`.
+        Searches for a pair of vertices that are possible end points of a path.
 
-        If no such representation exists, returns None. Otherwise,
-        returns the set of end vertices of the path (which has len 1 or 2)
+        The edges of the path must be exactly the set `path_elements`,
+        and the ends of the path must be incident with the edges in
+        `end_elements`.
+
+        INPUT:
+            - `path_elements` -- a set consisting of the edges of the
+            desired path. This must be a subset of `self.elements()`
+            edge set of the desired path
+            - `end_elements` -- a pair, each either an element in
+            `self.elements()` or `None`; if not `None`, the beginning/end of
+            the path must be incident with the specified element.
+
+        OUTPUT:
+            - A pair `(u,v)` of vertices in `self.graph()`, which are the
+            beginning and end of the desired path, respectively.
+            - If no such path exists, returns `None`
         """
         assert path_elements <= self.elements()
         end_element_set = set(e for e in end_elements if e is not None)
@@ -253,6 +353,18 @@ class SPQRNode(SageObject):
         return tuple(end_verts)
 
     def split(self, elements):
+        """
+        Split off a subset of elements, creating a new node.
+
+        INPUT:
+            - `elements` -- an iterable collection containing the elements
+            to be split off from this node.
+
+        OUTPUT:
+            - the marker element of the new node containing `elements`
+            - If `len(elements)== 1`, no new node is actually created,
+            and the single element is returned.
+        """
         elements = set(elements)
         assert elements <= self.elements()
         assert len(elements) > 0
@@ -282,20 +394,47 @@ class SPQRNode(SageObject):
         return m
 
     def become_rigid(self, graph):
+        """
+        Replace this node by a rigid node with the given graph.
+
+        INPUT:
+            - `graph` -- the graph representing the rigid node. The set of
+            edge labels of this graph must be `self.elements()`
+        """
         self._graph = graph
         self._kind = SPQRNode.RIGID
 
     def become_bond(self):
+        """
+        Make this node into a bond node.
+        """
         self._kind = SPQRNode.BOND
         if len(self.elements()) < 4:
             self._kind |= SPQRNode.RIGID
 
     def become_cycle(self):
+        """
+        Make this node into a cycle node.
+        """
         self._kind = SPQRNode.CYCLE
         if len(self.elements()) < 4:
             self._kind |= SPQRNode.RIGID
 
     def rigidify_path(self, path_elements, end_elements):
+        """
+        Replace this node with a node in which `path_elements` is the edge
+        set of a path with ends incident with the edges in `end_elements`.
+
+        This assumes the path exists. This should already have been checked
+        using `path_end_verts`.
+
+        INPUT:
+            - `path_elements` -- a set, consisting of the edges of the
+            desired path.
+            - `end_elements` -- a pair, each either in `self.elements()` or
+            `None`; if not `None`, the beginning/end of the path must be
+            incident with the specified element.
+        """
         assert path_elements <= self.elements()
         end_element_set = set(e for e in end_elements if e is not None)
         if self.is_bond():
@@ -335,6 +474,28 @@ class SPQRNode(SageObject):
                 self.become_cycle()
 
     def glue(self, other, self_end_verts, other_end_verts, flipped=False):
+        """
+        Glue this node to another node.
+
+        The two nodes must share a common marker edge. The edges incident
+        with this marker in the two graphs are identified so that
+        `self_end_verts[1]` is identified with `other_end_verts[0]`.
+
+        INPUT:
+            - `other` -- a node. This must be a neighbor of `self` in the
+            tree containing `self`.
+            - `self_end_verts` -- a pair of vertices in `self.graph()` which
+            are the beginning/end of a path in `self.graph()`.  The second
+            (end) vertex in the pair must be incident with the marker
+            element connecting `self` to `other` in the tree.
+            - `other_end_verts` -- a pair of vertices in `other.graph()` which
+            are the beginning/end of a path in `other.graph()`.  The second
+            (end) vertex in the pair must be  incident with the marker
+            element connecting `self` to `other` in the tree.
+            - `flipped` -- if `True`, the identification of the vertices is
+            reversed, so `self_end_verts[1]` is identified with the other
+            vertex incident with the marker, not `other_end_verts[0]`.
+        """
         G = self.graph()
         H = other.graph()
         owner = self.owner()
@@ -372,6 +533,13 @@ class SPQRNode(SageObject):
         return len(self._elements)
 
     def _make_graph(self):
+        """
+        Constructs a graph representing this node.
+
+        In general the vertices of this graph are arbitrary, and, in the
+        case of a cycle node, the ordering of the edges around the cycle is
+        also arbitrary.
+        """
         self._graph = EdgeLabelledGraph(multiedges=True)
         if len(self) == 0:
             return
@@ -388,36 +556,52 @@ class SPQRNode(SageObject):
 
 class SPQRTree(EdgeLabelledGraph):
     def __init__(self, reserved_labels=1000):
+        """
+        Construct a new, empty SPQRTree
+
+        INPUT:
+            - `reserved_labels` -- an integer greater than the largest edge
+            label that will ever be added to this tree. The labels of the
+            marker elements will start from this point.
+        """
         self._next_marker = reserved_labels
         self._roots = set()
         super(SPQRTree, self).__init__()
 
     def roots(self):
+        """
+        Return a set of tree vertices, exactly one from each connected
+        component.
+        """
         return self._roots
 
     def new_marker(self):
+        """
+        Create a label for a new marker element
+        """
         m = self._next_marker
         self._next_marker += 1
         return m
 
     def get_node(self, t):
+        """
+        Get the SPQRNode object associated with a tree vertex
+
+        INPUT:
+            - `t` -- a vertex in a tree
+        """
         return self.get_vertex(t)
 
-    def supporting_subtree(self, elements):
-        subtree = set()
-        if len(self) == 0:
-            return subtree
-        def recurse(p, t):
-            node = self.get_node(t)
-            in_subtree = len(elements & node.elements()) > 0
-            for s in self.neighbors(t):
-                if s != p:
-                    in_subtree |= recurse(t, s)
-            if in_subtree:
-                subtree.add(t)
-        recurse(None, self.root())
-
     def add_circuit(self, elements):
+        """
+        Updates the decomposition so that the given elements form a cycle in
+        each represented graph.
+
+        The new set of represented graphs is the maximal set of graphs such
+        that, for each represented graph $G$, `elements` is the set of edges
+        in a cycle in $G$, and $G$ contains a subgraph that was represented
+        by the old cycle.
+        """
         if len(elements) == 0:
             return False
         elements = set(elements)
@@ -511,6 +695,21 @@ class SPQRTree(EdgeLabelledGraph):
         return True
 
     def add_cycle_node(self, parent, marker, elements):
+        """
+        Add a new cycle node.
+
+        If `parent` is not `None`, the new node is attached to
+        `parent` along a marker edge labelled `marker`
+
+        INPUT:
+            - `parent` -- an existing tree vertex, or `None`
+            - `marker` -- a new marker label, that does not currently label
+            any tree edge, or `None` if `parent` is `None`
+            - `elements` -- the set of elements associated with the new node.
+
+        OUTPUT:
+            - the new node.
+        """
         t = self.add_vertex()
         node = SPQRNode.Cycle(self, t, elements)
         self.set_vertex(t, node)
@@ -519,6 +718,21 @@ class SPQRTree(EdgeLabelledGraph):
         return node
 
     def add_bond_node(self, parent, marker, elements):
+        """
+        Add a new bond node.
+
+        If `parent` is not `None`, the new node is attached to
+        `parent` along a marker edge labelled `marker`
+
+        INPUT:
+            - `parent` -- an existing tree vertex, or `None`
+            - `marker` -- a new marker label, that does not currently label
+            any tree edge, or `None` if `parent` is `None`
+            - `elements` -- the set of elements associated with the new node.
+
+        OUTPUT:
+            - the new node.
+        """
         t = self.add_vertex()
         node = SPQRNode.Bond(self, t, elements)
         self.set_vertex(t, node)
@@ -526,6 +740,21 @@ class SPQRTree(EdgeLabelledGraph):
         return node
 
     def add_rigid_node(self, parent, marker, graph):
+        """
+        Add a new rigid node.
+
+        If `parent` is not `None`, the new node is attached to
+        `parent` along a marker edge labelled `marker`
+
+        INPUT:
+            - `parent` -- an existing tree vertex, or `None`
+            - `marker` -- a new marker label, that does not currently label
+            any tree edge, or `None` if `parent` is `None`
+            - `elements` -- the set of elements associated with the new node.
+
+        OUTPUT:
+            - the new node.
+        """
         t = self.add_vertex()
         node = SPQRNode.Rigid(self, t, elements)
         self.set_vertex(t, node)
@@ -533,6 +762,15 @@ class SPQRTree(EdgeLabelledGraph):
         return node
 
     def move_edge(self, e, t_old, t_new):
+        """
+        Move one end of a tree edge.
+
+        INPUT:
+            - `e` -- the edge label of the tree edge to be moved.
+            - `t_old` -- the tree node currently incident with `e`,
+            which will no longer be incident with `e`
+            - `t_new` -- the tree node that will become incident with `e`
+        """
         t, s = self.get_edge(e)
         if t is not None:
             if t != t_old:
@@ -542,6 +780,9 @@ class SPQRTree(EdgeLabelledGraph):
             self.add_edge(t_new, s, e)
 
     def validate(self):
+        """
+        Do a series of integrity checks on the decomposition.
+        """
         for t0 in self:
             node0 = self.get_node(t0)
             if node0.is_rigid():
@@ -560,6 +801,22 @@ class SPQRTree(EdgeLabelledGraph):
                     assert len(node0.elements() & node1.elements()) == 0
 
     def _reduced_subtree(self, root, elements):
+        """
+        Find the minimal relevant subtree for `add_circuit`.
+
+        This creates a set `reduced_elements`, such that, in each graph
+        represented by this decomposition, `reduced_elements` is the edge
+        set of a path if and only if `elements` is the edge set of a path,
+        and `reduced_elements` is a small as possible.
+
+        This also finds the minimal subtree containing the nodes whose
+        element sets contain an element of `reduced_elements`.
+
+        OUTPUT:
+            - A pair `(subtree, reduced_elements)`, where `subtree` is the
+            set of tree vertices in the minimal subtree,
+            and `reduced_elements` is the reduced set of elements.
+        """
         assert len(self) > 0
         subtree = set()
 
@@ -617,9 +874,11 @@ class SPQRTree(EdgeLabelledGraph):
         return subtree, elements
 
     def _divide_elements(self, elements, subtree):
-        # divide the `elements` set into two: the old elements, found in
-        # some node in `subtree`, and the new elements, not found in any
-        # node in `subtree`
+        """
+        Divide the `elements` set into two: the old elements, found in
+        some node in `subtree`, and the new elements, not found in any
+        node in `subtree`.
+        """
         old_elements = set()
         for t in subtree:
             node = self.get_node(t)
@@ -629,8 +888,10 @@ class SPQRTree(EdgeLabelledGraph):
         return old_elements, elements
 
     def _subtree_path(self, subtree):
-        # Check that the subtree is a path, and return a sorted list of the
-        # nodes along the path, or return None if it is not a path.
+        """
+        Check that the subtree is a path and return a sorted list of the
+        nodes along the path, or return None if it is not a path.
+        """
         if len(subtree) == 1:
             return list(subtree)
         t0 = None
@@ -661,6 +922,26 @@ class SPQRTree(EdgeLabelledGraph):
         return subtree_list
 
     def _path_ends(self, subtree, path_elements):
+        """
+        Find the ends of the segments of the path in each node in the subtree.
+
+        If this decomposition represents a graph in which `path_elements` is
+        the edge set of a path, then find, for each node in `subtree`,
+        the two vertices that are the ends of the subpath in the graph
+        associated with that node.
+
+        INPUT:
+            - `subtree` -- a list of nodes which form a path in a
+            decomposition tree.
+            - `path_elements` -- a set of elements contained in the union of
+            the element sets associated with the nodes in `subtree`.
+
+        OUTPUT:
+            - A list of triples, `(t, end_elements, end_verts)`, where `t`
+            is a tree-vertex, `end_elements` is a pair in which each item is
+            either an element of the node associated with `t`, or `None`, and
+            `end_verts` is a pair of vertices in the graph associated with `t`.
+        """
         n = len(subtree)
         for i, t in enumerate(subtree):
             node = self.get_node(t)
