@@ -291,6 +291,10 @@ REFERENCES:
              representation of the Riemann map and Ahlfors map via the
              Kerzman-Stein equation". Involve 3-4 (2010), 405-420.
 
+.. [BW1988] Robert E. Bixby and Donald K. Wagner. "An Almost Linear-Time
+            Algorithm for Graph Realization". Mathematics of Operations
+            Research, Volume 13, No. 1 (1988)
+
 .. [BW1996] Anders Bjorner and Michelle L. Wachs. *Shellable nonpure
             complexes and posets. I*. Trans. of
             Amer. Math. Soc. **348** No. 4. (1996)
@@ -1325,6 +1329,9 @@ REFERENCES:
 .. [Ser1992] \J.-P. Serre : *Lie Algebras and Lie Groups*, 2nd ed.,
              Springer (Berlin) (1992);
              :doi:`10.1007/978-3-540-70634-2`
+
+.. [Sey1981] \P. D. Seymour. "Recognizing graphic matroids". Combinatorica,
+             Volume 1, Issue 1, 1981.
 
 .. [SH1995] \C. P. Schnorr and H. H. Hörner. *Attacking the
             Chor-Rivest Cryptosystem by Improved Lattice

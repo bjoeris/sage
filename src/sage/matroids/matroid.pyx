@@ -7714,3 +7714,103 @@ cdef class Matroid(SageObject):
         """
         from sage.homology.simplicial_complex import SimplicialComplex
         return SimplicialComplex(self.no_broken_circuits_sets(ordering))
+
+
+    def graphic_representation(self):
+        """
+        Find a graphic representation, if the matroid is graphic.
+
+        OUTPUT:
+            - A graph $G$ such that `M` is the cycle matroid of $G$.
+            - If no such graph exists, returns `None`
+
+        .. SEEALSO::
+
+            :meth:`M.is_graphic() <sage.matroids.linear_matroid.BinaryMatroid.is_graphic>`
+
+        REFERENCES:
+
+            The algorithm is based on [BW1988]_.
+
+        EXAMPLES::
+            sage: from sage.matroids.graphic_representation \
+            ....:     import graphic_representation
+            sage: R10 = matroids.named_matroids.R10()
+            sage: M = Matroid(ring=GF(2), reduced_matrix=R10.representation(
+            ....:                                 reduced=True, labels=False))
+            sage: M.graphic_representation() is None
+            True
+            sage: K5 = matroids.CompleteGraphic(5)
+            sage: M = Matroid(ring=GF(2), reduced_matrix=K5.representation(
+            ....:                                 reduced=True, labels=False))
+            sage: G = M.graphic_representation()
+            sage: G.is_isomorphic(graphs.CompleteGraph(5))
+            True
+        """
+        from sage.graphs.graph_decompositions.spqr_tree_unrooted import SPQRTree
+        E = self.groundset()
+        max_label = None
+        for e in E:
+            try:
+                i = int(e)
+                if max_label is None or i > max_label:
+                    max_label = i
+            except:
+                pass
+        decomposition = SPQRTree(max_label+1)
+        B = self.basis()
+        for e in E:
+            if e in B:
+                continue
+            C = self.fundamental_circuit(B, e)
+            decomposition.add_circuit(C)
+        G = decomposition.graph()
+        if self.verify_graphic_representation(G):
+            return G
+        else:
+            return None
+
+    def verify_graphic_representation(self, G):
+        """
+        Determine whether a matroid is represented by a graph.
+
+        REFERENCES:
+
+            This test is based on [Sey1981]_.
+
+        INPUT:
+            - `G` -- a graph
+
+        OUTPUT:
+            - `True` if `G` is a graphic representation of `M`, otherwise `False`
+
+        EXAMPLES::
+
+            sage: from sage.matroids.graphic_representation \
+            ....:     import verify_graphic_representation
+            sage: G = EdgeLabelledGraph(graphs.CompleteGraph(5))
+            sage: MG = Matroid(G)
+            sage: M = Matroid(groundset=MG.groundset(),
+            ....:             rank_function=MG.rank)
+            sage: M.verify_graphic_representation(G)
+            True
+
+            sage: G = EdgeLabelledGraph(graphs.CompleteGraph(5))
+            sage: M = matroids.named_matroids.R10()
+            sage: M.verify_graphic_representation(G)
+            False
+        """
+        if self.groundset() != set(G.edge_labels()):
+            return False
+        if self.full_rank() != len(G.vertices()) - G.connected_components_number():
+            return False
+        blocks = [block for component in G.connected_components()\
+                        for block in G.subgraph(component).blocks_and_cut_vertices()[0]]
+        for block in blocks:
+            for v in block:
+                C = { e for u1,u2,e in G.edge_boundary([v])
+                        if u1 in block and u2 in block }
+                if not self.is_cocircuit(C):
+                    return False
+        return True
+
