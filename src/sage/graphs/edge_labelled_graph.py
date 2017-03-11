@@ -379,8 +379,11 @@ class EdgeLabelledMixin(object):
         del self._vertices_incident[label]
         super(EdgeLabelledMixin, self).delete_edge(u, v, label)
 
-    def edge_labels(self):
+    def edge_label_set(self):
         return self._vertices_incident.viewkeys()
+
+    def edge_labels(self):
+        return list(self.edge_label_set())
 
     def _get_new_edge(self):
         """
