@@ -100,9 +100,7 @@ class TestSPQR(unittest.TestCase):
             self.assertTrue(decomposition.add_circuit(cycle))
             decomposition.validate()
         self.assertEqual(len(decomposition), 1)
-        t0, = decomposition
-        node0 = decomposition.get_node(t0)
-        H = node0.graph()
+        H = decomposition.graph()
         expected_edge_neighborhoods = \
             { frozenset(frozenset([G.edge_label(u,v)]) for v in G.neighbors(u))
               for u in
